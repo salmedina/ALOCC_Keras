@@ -1,4 +1,4 @@
-# [How to do Novelty Detection in Keras with Generative Adversarial Network](https://www.dlology.com/blog/how-to-do-novelty-detection-in-keras-with-generative-adversarial-network/)
+# Novelty Detection for VIRAT with ALOCC using Keras
 
 
 This repository is a fork of the Keras implementation of paper https://arxiv.org/abs/1802.09088
