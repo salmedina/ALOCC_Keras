@@ -25,13 +25,14 @@ from kh_tools import *
 
 class ALOCC_Model():
     def __init__(self,
-               input_height=28,input_width=28, output_height=28, output_width=28,
-               attention_label=1, is_training=True,
-               z_dim=100, gf_dim=16, df_dim=16, c_dim=3,
-               dataset_name=None, dataset_address=None, input_fname_pattern=None,
-               checkpoint_dir='checkpoint', log_dir='log', sample_dir='sample', r_alpha = 0.2,
-               kb_work_on_patch=True, nd_patch_size=(10, 10), n_stride=1,
-               n_fetch_data=10):
+                 input_height=28,input_width=28,
+                 output_height=28, output_width=28,
+                 attention_label=1,
+                 is_training=True,
+                 z_dim=100, gf_dim=16, df_dim=16, c_dim=3,
+                 dataset_name=None, dataset_address=None, input_fname_pattern=None,
+                 checkpoint_dir='checkpoint', log_dir='log', sample_dir='sample',
+                 r_alpha = 0.2, kb_work_on_patch=True, nd_patch_size=(10, 10), n_stride=1, n_fetch_data=10):
         """
         This is the main class of our Adversarially Learned One-Class Classifier for Novelty Detection.
         :param sess: TensorFlow session.
@@ -42,11 +43,11 @@ class ALOCC_Model():
         :param attention_label: Conditioned label that growth attention of training label [1]
         :param is_training: True if in training mode.
         :param z_dim:  (optional) Dimension of dim for Z, the output of encoder. [100]
-        :param gf_dim: (optional) Dimension of gen filters in first conv layer, i.e. g_decoder_h0. [16] 
-        :param df_dim: (optional) Dimension of discrim filters in first conv layer, i.e. d_h0_conv. [16] 
+        :param gf_dim: (optional) Dimension of gen filters in first conv layer, i.e. g_decoder_h0. [16]
+        :param df_dim: (optional) Dimension of discrim filters in first conv layer, i.e. d_h0_conv. [16]
         :param c_dim: (optional) Dimension of image color. For grayscale input, set to 1. [3]
-        :param dataset_name: 'UCSD', 'mnist' or custom defined name.
-        :param dataset_address: path to dataset folder. e.g. './dataset/mnist'.
+        :param dataset_name: 'mnist', 'virat', or custom defined name.
+        :param dataset_address: path to dataset folder or file. e.g. './dataset/mnist'.
         :param input_fname_pattern: Glob pattern of filename of input images e.g. '*'.
         :param checkpoint_dir: path to saved checkpoint(s) directory.
         :param log_dir: log directory for training, can be later viewed in TensorBoard.
@@ -55,7 +56,7 @@ class ALOCC_Model():
         :param kb_work_on_patch: Boolean value for working on PatchBased System or not, only applies to UCSD dataset [True]
         :param nd_patch_size:  Input patch size, only applies to UCSD dataset.
         :param n_stride: PatchBased data preprocessing stride, only applies to UCSD dataset.
-        :param n_fetch_data: Fetch size of Data, only applies to UCSD dataset. 
+        :param n_fetch_data: Fetch size of Data, only applies to UCSD dataset.
         """
 
         self.b_work_on_patch = kb_work_on_patch
@@ -71,29 +72,36 @@ class ALOCC_Model():
         self.output_width = output_width
 
         self.z_dim = z_dim
-
         self.gf_dim = gf_dim
         self.df_dim = df_dim
+        self.c_dim = c_dim
 
         self.dataset_name = dataset_name
-        self.dataset_address= dataset_address
+        self.dataset_address = dataset_address
         self.input_fname_pattern = input_fname_pattern
         self.checkpoint_dir = checkpoint_dir
         self.log_dir = log_dir
 
         self.attention_label = attention_label
         if self.is_training:
-          logging.basicConfig(filename='ALOCC_loss.log', level=logging.INFO)
-
-        if self.dataset_name == 'mnist':
-          (X_train, y_train), (_, _) = mnist.load_data()
-          # Make the data range between 0~1.
-          X_train = X_train / 255
-          specific_idx = np.where(y_train == self.attention_label)[0]
-          self.data = X_train[specific_idx].reshape(-1, 28, 28, 1)
-          self.c_dim = 1
-        else:
-          assert('Error in loading dataset')
+            logging.basicConfig(filename='ALOCC_loss.log', level=logging.INFO)
+            if self.dataset_name == 'mnist':
+                (X_train, y_train), (_, _) = mnist.load_data()
+                # Make the data range between 0~1.
+                X_train = X_train / 255
+                specific_idx = np.where(y_train == self.attention_label)[0]
+                self.data = X_train[specific_idx].reshape(-1, 28, 28, 1)
+                self.c_dim = 1
+            elif self.dataset_name == 'virat':
+                print('Loading VIRAT dataset', self.dataset_address)
+                dataset = np.load(open(self.dataset_address, 'rb'))
+                X_train, y_train = dataset['images'], dataset['labels']
+                X_train = X_train / 255.0
+                specific_idx = np.where(y_train == self.attention_label)[0]
+                self.data = X_train[specific_idx].reshape(-1, self.input_width, self.input_height, 1)
+                self.c_dim = 1
+            else:
+                assert('Unknown dataset')
 
         self.grayscale = (self.c_dim == 1)
         self.build_model()
@@ -120,13 +128,6 @@ class ALOCC_Model():
         x = LeakyReLU()(x)
 
         # Decoder.
-        # TODO: need a flexable solution to select output_padding and padding.
-        # x = Conv2DTranspose(self.gf_dim*2, kernel_size = 5, strides=2, activation='relu', padding='same', output_padding=0, name='g_decoder_h0')(x)
-        # x = BatchNormalization()(x)
-        # x = Conv2DTranspose(self.gf_dim*1, kernel_size = 5, strides=2, activation='relu', padding='same', output_padding=1, name='g_decoder_h1')(x)
-        # x = BatchNormalization()(x)
-        # x = Conv2DTranspose(self.c_dim,    kernel_size = 5, strides=2, activation='tanh', padding='same', output_padding=1, name='g_decoder_h2')(x)
-
         x = Conv2D(self.gf_dim*1, kernel_size=5, activation='relu', padding='same')(x)
         x = UpSampling2D((2, 2))(x)
         x = Conv2D(self.gf_dim*1, kernel_size=5, activation='relu', padding='same')(x)
