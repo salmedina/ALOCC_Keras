@@ -291,7 +291,21 @@ class ALOCC_Model():
         model_name = 'ALOCC_Model_{}.h5'.format(step)
         self.adversarial_model.save_weights(os.path.join(self.checkpoint_dir, model_name))
 
+def train_mnist():
+    model = ALOCC_Model(dataset_name='mnist', input_height=28,input_width=28)
+    model.train(epochs=50, batch_size=128, sample_interval=500)
+
+def train_virat(sid, num_epochs=20):
+    model = ALOCC_Model(dataset_name='virat',
+                         dataset_address='/home/zal/Devel/Vehice_Action_Classifier/output/alocc_data.npz',
+                         input_height=64,input_width=64,
+                         output_height=64, output_width=64,
+                         attention_label=sid,
+                         checkpoint_dir='./checkpoint/%02d/'%sid,
+                         log_dir='./log/%02d/'%sid,
+                         sample_dir='./sample/%02d/'%sid,
+                         r_alpha=0.2)
+    model.train(epochs=num_epochs, batch_size=128, sample_interval=500)
 
 if __name__ == '__main__':
-    model = ALOCC_Model(dataset_name='mnist', input_height=28,input_width=28)
-    model.train(epochs=5, batch_size=128, sample_interval=500)
+    train_virat(0)
