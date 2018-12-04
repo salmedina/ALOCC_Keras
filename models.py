@@ -132,7 +132,7 @@ class ALOCC_Model():
         x = UpSampling2D((2, 2))(x)
         x = Conv2D(self.gf_dim*1, kernel_size=5, activation='relu', padding='same')(x)
         x = UpSampling2D((2, 2))(x)
-        x = Conv2D(self.gf_dim*2, kernel_size=3, activation='relu')(x)
+        x = Conv2D(self.gf_dim*2, kernel_size=3, activation='relu', padding='same')(x)
         x = UpSampling2D((2, 2))(x)
         x = Conv2D(self.c_dim, kernel_size=5, activation='sigmoid', padding='same')(x)
         return Model(image, x, name='R')
