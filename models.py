@@ -204,7 +204,7 @@ class ALOCC_Model():
         log_dir = os.path.join(self.log_dir, self.model_dir)
         os.makedirs(log_dir, exist_ok=True)
         
-        if self.dataset_name == 'mnist':
+        if self.dataset_name in ['mnist', 'virat']:
             # Get a batch of sample images with attention_label to export as montage.
             sample = self.data[0:batch_size]
 
@@ -219,7 +219,7 @@ class ALOCC_Model():
         plot_g_recon_losses = []
 
         # Load traning data, add random noise.
-        if self.dataset_name == 'mnist':
+        if self.dataset_name in ['mnist', 'virat']:
             sample_w_noise = get_noisy_data(self.data)
 
         # Adversarial ground truths
@@ -228,13 +228,13 @@ class ALOCC_Model():
 
         for epoch in range(epochs):
             print('Epoch ({}/{})-------------------------------------------------'.format(epoch,epochs))
-            if self.dataset_name == 'mnist':
+            if self.dataset_name in ['mnist', 'virat']:
                 # Number of batches computed by total number of target data / batch size.
                 batch_idxs = len(self.data) // batch_size
              
             for idx in range(0, batch_idxs):
                 # Get a batch of images and add random noise.
-                if self.dataset_name == 'mnist':
+                if self.dataset_name in ['mnist', 'virat']:
                     batch = self.data[idx * batch_size:(idx + 1) * batch_size]
                     batch_noise = sample_w_noise[idx * batch_size:(idx + 1) * batch_size]
                     batch_clean = self.data[idx * batch_size:(idx + 1) * batch_size]
@@ -242,7 +242,7 @@ class ALOCC_Model():
                 batch_images = np.array(batch).astype(np.float32)
                 batch_noise_images = np.array(batch_noise).astype(np.float32)
                 batch_clean_images = np.array(batch_clean).astype(np.float32)
-                if self.dataset_name == 'mnist':
+                if self.dataset_name in ['mnist', 'virat']:
                     batch_fake_images = self.generator.predict(batch_noise_images)
                     # Update D network, minimize real images inputs->D-> ones, noisy z->R->D->zeros loss.
                     d_loss_real = self.discriminator.train_on_batch(batch_images, ones)
@@ -258,7 +258,7 @@ class ALOCC_Model():
                 print(msg)
                 logging.info(msg)
                 if np.mod(counter, sample_interval) == 0:
-                    if self.dataset_name == 'mnist':
+                    if self.dataset_name in ['mnist', 'virat']:
                         samples = self.generator.predict(sample_inputs)
                         manifold_h = int(np.ceil(np.sqrt(samples.shape[0])))
                         manifold_w = int(np.floor(np.sqrt(samples.shape[0])))
