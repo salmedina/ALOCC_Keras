@@ -18,10 +18,18 @@ import matplotlib.pyplot as plt
 import os
 
 import numpy as np
-
+import tensorflow as tf
 from utils import *
 from kh_tools import *
 
+# Tensorflow configurator
+config = tf.ConfigProto()
+# Allocate gpu memory on-demand
+config.gpu_options.allow_growth = True
+# Let it eat the whole gpu, just not since the beginning
+config.gpu_options.per_process_gpu_memory_fraction = 1.0
+# Set a session with the new configuration
+K.tensorflow_backend.set_session(tf.Session(config=config))
 
 class ALOCC_Model():
     def __init__(self,
