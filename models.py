@@ -171,34 +171,31 @@ class ALOCC_Model():
 
     def build_model(self):
         image_dims = [self.input_height, self.input_width, self.c_dim]
-        optimizer = RMSprop(lr=0.002, clipvalue=1.0, decay=1e-8)
-        # Construct discriminator/D network takes real image as input.
-        # D - sigmoid and D_logits -linear output.
-        self.discriminator = self.build_discriminator(image_dims)
+        img = Input(shape=image_dims)
 
-        # Model to train D to discrimate real images.
-        self.discriminator.compile(optimizer=optimizer, loss='binary_crossentropy')
+        rms_opt = RMSprop(lr=0.002, clipvalue=1.0, decay=1e-6)
 
         # Construct generator/R network.
         self.generator = self.build_generator(image_dims)
-        img = Input(shape=image_dims)
 
-        reconstructed_img = self.generator(img)
+        # Construct discriminator/D network takes real image as input.
+        # D - sigmoid and D_logits -linear output.
+        self.discriminator = self.build_discriminator(image_dims)
+        # Model to train D to discriminate real images.
+        self.discriminator.compile(optimizer=rms_opt, loss='binary_crossentropy')
 
+        # Adversarial model to train Generator/R to minimize reconstruction loss and trick D to see
+        r_network = self.generator(img)
         self.discriminator.trainable = False
-        validity = self.discriminator(reconstructed_img)
-        
-        # Model to train Generator/R to minimize reconstruction loss and trick D to see
+        d_network = self.discriminator(r_network)
+
         # generated images as real ones.
-        self.adversarial_model = Model(img, [reconstructed_img, validity])
+        self.adversarial_model = Model(img, [r_network, d_network])
         self.adversarial_model.compile(loss=['binary_crossentropy', 'binary_crossentropy'],
-            loss_weights=[self.r_alpha, 1],
-            optimizer=optimizer)
+                                       loss_weights=[self.r_alpha, 1],
+                                       optimizer=rms_opt)
 
-        print('\n\rdiscriminator')
-        self.discriminator.summary()
-
-        print('\n\adversarial_model')
+        print('\n\r adversarial_model')
         self.adversarial_model.summary()
 
     
