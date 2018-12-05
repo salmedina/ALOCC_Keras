@@ -1,26 +1,21 @@
 from __future__ import print_function, division
 
-from keras.datasets import mnist
-from keras.layers import Input, Dense, Reshape, Flatten, Dropout, multiply, GaussianNoise
-from keras.layers import BatchNormalization, Activation, Embedding, ZeroPadding2D
-from keras.layers import Concatenate
-from keras.layers.advanced_activations import LeakyReLU
-from keras.layers.convolutional import UpSampling2D, Conv2D, Conv2DTranspose
-from keras.models import Sequential, Model
-from keras.optimizers import Adam, RMSprop
-from keras import losses
-from keras.callbacks import TensorBoard
-from keras.utils import to_categorical
+import logging
+
 import keras.backend as K
 import scipy
-import logging
-import matplotlib.pyplot as plt
-import os
-
-import numpy as np
 import tensorflow as tf
-from utils import *
+from keras.datasets import mnist
+from keras.layers import BatchNormalization
+from keras.layers import Input, Dense, Flatten
+from keras.layers.advanced_activations import LeakyReLU
+from keras.layers.convolutional import UpSampling2D, Conv2D
+from keras.models import Model
+from keras.optimizers import RMSprop
+from sklearn.utils import shuffle
+
 from kh_tools import *
+from utils import *
 
 # Tensorflow configurator
 config = tf.ConfigProto()
@@ -107,6 +102,8 @@ class ALOCC_Model():
                 X_train = X_train / 255.0
                 specific_idx = np.where(y_train == self.attention_label)[0]
                 self.data = X_train[specific_idx].reshape(-1, self.input_width, self.input_height, 1)
+                neg_idx = np.random.choice(np.where(y_train != self.attention_label)[0], len(X_train)//2, replace=False)
+                self.neg_data = shuffle(X_train[neg_idx].reshape(-1, self.input_width, self.input_height, 1))
                 self.c_dim = 1
             else:
                 assert('Unknown dataset')
@@ -207,7 +204,7 @@ class ALOCC_Model():
         self.adversarial_model.summary()
 
     
-    def train(self, epochs, batch_size = 128, sample_interval=500):
+    def train(self, num_epochs, batch_size = 128, sample_interval=500):
         # Make log folder if not exist.
         log_dir = os.path.join(self.log_dir, self.model_dir)
         os.makedirs(log_dir, exist_ok=True)
@@ -229,13 +226,14 @@ class ALOCC_Model():
         # Load traning data, add random noise.
         if self.dataset_name in ['mnist', 'virat']:
             sample_w_noise = get_noisy_data(self.data)
+            neg_sample_w_noise = get_noisy_data(self.neg_data)
 
         # Adversarial ground truths
         ones = np.ones((batch_size, 1))
         zeros = np.zeros((batch_size, 1))
 
-        for epoch in range(epochs):
-            print('Epoch ({}/{})-------------------------------------------------'.format(epoch,epochs))
+        for epoch in range(num_epochs):
+            print('Epoch ({}/{})-------------------------------------------------'.format(epoch, num_epochs))
             if self.dataset_name in ['mnist', 'virat']:
                 # Number of batches computed by total number of target data / batch size.
                 batch_idxs = len(self.data) // batch_size
@@ -262,7 +260,7 @@ class ALOCC_Model():
                     plot_epochs.append(epoch+idx/batch_idxs)
                     plot_g_recon_losses.append(g_loss[1])
                 counter += 1
-                msg = 'Epoch:[{0}]-[{1}/{2}] --> d_loss: {3:>0.3f}, g_loss:{4:>0.3f}, g_recon_loss:{4:>0.3f}'.format(epoch, idx, batch_idxs, d_loss_real+d_loss_fake, g_loss[0], g_loss[1])
+                msg = 'Epoch:[{0}]-[{1}/{2}] --> d_loss: {3:>0.3f}, g_loss:{4:>0.3f}, g_recon_loss:{5:>0.3f}'.format(epoch, idx, batch_idxs, d_loss_real+d_loss_fake, g_loss[0], g_loss[1])
                 print(msg)
                 logging.info(msg)
                 if np.mod(counter, sample_interval) == 0:
@@ -275,6 +273,7 @@ class ALOCC_Model():
 
             # Save the checkpoint end of each epoch.
             self.save(epoch)
+
         # Export the Generator/R network reconstruction losses as a plot.
         plt.title('Generator/R network reconstruction losses')
         plt.xlabel('Epoch')
@@ -283,25 +282,63 @@ class ALOCC_Model():
         plt.plot(plot_epochs,plot_g_recon_losses)
         plt.savefig('plot_g_recon_losses.png')
 
+        self.adversarial_model.get_layer('R').trainable = False
+        self.adversarial_model.get_layer('D').trainable = True
+        plot_g_finetune_losses = []
+        plot_epochs_finetune = []
+        for epoch in range(num_epochs//3):
+            print('Epoch ({}/{})-------------------------------------------------'.format(epoch, num_epochs))
+            batch_idxs = len(self.data) // batch_size
+
+            for idx in range(0, batch_idxs):
+                pos_batch = self.data[idx * batch_size:(idx + 1) * batch_size]
+                neg_batch = self.neg_data[idx * batch_size:(idx + 1) * batch_size]
+                pos_noise_batch = sample_w_noise[idx * batch_size:(idx + 1) * batch_size]
+                neg_noise_batch = neg_sample_w_noise[idx * batch_size:(idx + 1) * batch_size]
+
+                pos_batch_images = np.array(pos_batch).astype(np.float32)
+                neg_batch_images = np.array(neg_batch).astype(np.float32)
+                pos_noise_images = np.array(pos_noise_batch).astype(np.float32)
+                neg_noise_images = np.array(neg_noise_batch).astype(np.float32)
+
+                self.adversarial_model.train_on_batch(pos_noise_images, [pos_batch_images, ones])
+                g_loss = self.adversarial_model.train_on_batch(neg_noise_images, [neg_batch_images, zeros])
+                plot_epochs_finetune.append(epoch + idx / batch_idxs)
+                plot_g_finetune_losses.append(g_loss[1])
+
+                msg = 'Epoch:[{0}]-[{1}/{2}] --> d_loss:{3:>0.3f}'.format(
+                    epoch, idx, batch_idxs, g_loss[2])
+                print(msg)
+
+        # Export the Generator/R network reconstruction losses as a plot.
+        plt.title('Generator/R network loss after finetune')
+        plt.xlabel('Epoch')
+        plt.ylabel('training loss')
+        plt.grid()
+        plt.plot(plot_epochs_finetune, plot_g_finetune_losses)
+        plt.savefig('plot_g_finetune_losses.png')
+
+        self.save()
+
     @property
     def model_dir(self):
         return "{}_{}_{}".format(
             self.dataset_name,
             self.output_height, self.output_width)
 
-    def save(self, step):
+    def save(self, step=None):
         """Helper method to save model weights.
         
         Arguments:
             step {[type]} -- [description]
         """
         os.makedirs(self.checkpoint_dir, exist_ok=True)
-        model_name = 'ALOCC_Model_{}.h5'.format(step)
+        model_name = 'ALOCC_Model_{}.h5'.format(step) if step is not None else 'ALOCC_Model.h5'
         self.adversarial_model.save_weights(os.path.join(self.checkpoint_dir, model_name))
 
 def train_mnist():
     model = ALOCC_Model(dataset_name='mnist', input_height=28,input_width=28)
-    model.train(epochs=50, batch_size=128, sample_interval=500)
+    model.train(num_epochs=50, batch_size=128, sample_interval=500)
 
 def train_virat(sid, num_epochs=20):
     model = ALOCC_Model(dataset_name='virat',
@@ -313,7 +350,7 @@ def train_virat(sid, num_epochs=20):
                          log_dir='./log/%02d/'%sid,
                          sample_dir='./sample/%02d/'%sid,
                          r_alpha=0.2)
-    model.train(epochs=num_epochs, batch_size=128, sample_interval=500)
+    model.train(num_epochs=num_epochs, batch_size=128, sample_interval=500)
 
 if __name__ == '__main__':
-    train_virat(0)
+    train_virat(4, 20)
