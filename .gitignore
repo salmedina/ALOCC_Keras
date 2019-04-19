@@ -6,4 +6,3 @@ logs/
 *.log
 .vscode/
 sample/
-*.png
